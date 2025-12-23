@@ -2,7 +2,7 @@ class WargameEnv:
     def __init__(self):
         # unit states
         self.blue_units=27
-        self.blue_pos=[0,0]
+        self.blue_pos=[100,100]
         self.blue_health=1.0
         self.blue_firepower = 0.8
 
@@ -39,7 +39,7 @@ class WargameEnv:
             4: self.red_pos[1],
 
             5: self.wind_speed,
-            
+
             6: self.blue_health,
             7: self.red_health,
             8: self.blue_firepower,
