@@ -68,7 +68,8 @@ class Game:
         # main rendering
         pyglet.clock.tick()
         self.window.switch_to()
-        self.window.dispatch_events()
-        self.window.dispatch_event('on_draw')
-        self.window.flip()
+        self.window.dispatch_events()  # process pending events (keyboard, mouse, etc.)
+        self.window.clear()  # clear the window
+        self.batch.draw()  # draw all shapes in the batch
+        self.window.flip()  # swap buffers to display the frame
 
