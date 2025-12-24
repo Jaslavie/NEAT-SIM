@@ -67,3 +67,6 @@ coverage.xml
 
 # mypy
 .mypy_cache/
+
+# ipynb outputs
+*.ipynb_checkpoints/
