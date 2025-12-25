@@ -63,7 +63,7 @@ class WargameEnv:
 
         # counter attacks from red (only if red has units and blue has units)
         if self.red_units > 0 and self.blue_units > 0:
-            red_damage = self.calculate_damage(self.red_units, self.red_firepower)
+            red_damage = self.get_red_actions(self.blue_pos, self.red_pos)
             self.blue_units -= red_damage
             self.blue_units = max(0, int(round(self.blue_units)))  # ensure units remain integer
         
@@ -113,23 +113,7 @@ class WargameEnv:
         """
         return (self.blue_units <= 0 or self.red_units <= 0 or self.time >= self.max_time)
 
-    # ======== ACTIONS ==========
-    def move_forward(self, blue_pos):
-        """
-        advance
-        move right on the x axis
-        """
-        blue_pos[0] += 10
-        return blue_pos
-
-    def move_backward(self, blue_pos):
-        """
-        retreat
-        move left on the x axis
-        """
-        blue_pos[0] -= 10
-        return blue_pos
-    
+    # ======== ACTIONS ========== 
     def calculate_damage(self, units, firepower, hit_probability=0.6):
         """
         damage computed from lanchester equation
@@ -145,4 +129,26 @@ class WargameEnv:
         
         return actual_damage
     
+    def get_red_actions(self, blue_pos, red_pos):
+        # compute on x axis
+        distance = abs(blue_pos[0] - red_pos[0])
+
+        red_strength_ratio = self.red_units / 33.0
+        
+        # red ships will only attack upon close range
+        if distance > 100:
+            red_effective_units = self.red_units * 0.3
+        elif distance < 50:
+            red_effective_units = self.red_units * 0.8
+        else:
+            red_effective_units = self.red_units * 0.5 
+        
+        red_damage = self.calculate_damage(red_effective_units, self.red_firepower)
+
+        return red_damage
+    
     # def interpret_actions(action):
+
+# class RedState:
+
+    
