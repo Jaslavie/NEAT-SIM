@@ -4,12 +4,12 @@ class WargameEnv:
     def __init__(self):
         # unit states
         self.blue_units=27
-        self.blue_pos = [200, 200]
+        self.blue_pos = [500, 500]
         self.blue_hp = 1.0
         self.blue_firepower = 0.8
 
         self.red_units=33
-        self.red_pos  = [400, 200]
+        self.red_pos  = [800, 500]
         self.red_hp  = 1.0
         self.red_firepower = 0.5
 
@@ -130,7 +130,7 @@ class WargameEnv:
         blue_pos[0] -= 10
         return blue_pos
     
-    def calculate_damage(self, units, firepower, hit_probability=0.3):
+    def calculate_damage(self, units, firepower, hit_probability=0.6):
         """
         damage computed from lanchester equation
         \(dB/dt=-aA\)
