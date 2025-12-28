@@ -1,5 +1,7 @@
 ## Implementing the NEAT genetic algorithm
 original paper: https://nn.cs.utexas.edu/downloads/papers/stanley.cec02.pd
+battle of trafalgar order of battle: https://en.wikipedia.org/wiki/Battle_of_Trafalgar_order_of_battle 
+battle timeline: https://www.rmg.co.uk/stories/maritime-history/battle-trafalgar-timeline 
 
 ### Simulation design
 We use the **Battle of Trafalgar** as our game setup (a classic demonstration of the Lanchester square problem of concentrated firepower). This was a close combat naval engagement between the british and french/spanish forces. The british General Nelson famously used concentrated firepower to beat the franco-spanish forces which he was outnumbered by 27-to-33. 

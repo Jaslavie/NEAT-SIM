@@ -1,4 +1,5 @@
 import random 
+from abc import ABC, abstractmethod
 
 class WargameEnv:
     def __init__(self):
@@ -149,6 +150,83 @@ class WargameEnv:
     
     # def interpret_actions(action):
 
-# class RedState:
+class StateMachine(ABC):
+    def __init__(self, name: str):
+    
+    # ==== lifecycle hooks to define current state ====
+    def on_enter(self, obs):
+    def on_update(self, obs):
+    def on_exit(self, obs):
+
+    # ==== hfsm management ====
+    def load_substate()
+        """
+        substates are strategic positions: defend, attack, etc
+        """
+    def add_transition()
+
+    def enter_state_machine()
+
+    def update_state_machine()
+
+    def exit_state_machine()
+
+    # implemented by children
+    @abstractmethod
+    def select_action(self, obs) -> dict:
+
+class RedStateMachine(StateMachine):
+    def __init__(self):
+        super().__init__(name="RED")
+        # init states
+        self.states = {
+            'LINE': LineFormState,
+            'DEFENSE': DefenseState,
+            'RETREAT': RetreatState
+        }
+
+        # begin in line formation
+        self.current_state = self.states['LINE']
+        self.current_state.enter_state_machine({})
+
+    def update(self, obs):
+        
+    def transition(state):
 
     
+class LineFormState:
+    """
+    maintain position with controlled fire
+    """
+    def on_enter(self, obs):
+
+    def on_update(self, obs):
+    
+    def on_exit(self, obs):
+
+    def select_action(self, obs):
+
+class DefenseState:
+    """
+    franco-spanish ships fragment after the british breaks the line
+    """
+    def on_enter(self, obs):
+
+    def on_update(self, obs):
+    
+    def on_exit(self, obs):
+
+    def select_action(self, obs):
+
+class RetreatState:
+    """
+    full retreat to cadiz port
+    """
+    def on_enter(self, obs):
+
+    def on_update(self, obs):
+    
+    def on_exit(self, obs):
+
+    def select_action(self, obs):
+            
