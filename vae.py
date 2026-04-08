@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
+
 from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,29 +31,26 @@ class TacticVAE(nn.Module):
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
 
-        # 2 hidden layers
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim), # 400 → 128
-            nn.LeakyReLU(0.01),
-            nn.Linear(hidden_dim, hidden_dim), # 128 → 128
-            nn.LeakyReLU(0.01),
-        )
-        
-        # mu and std as heads to represent probability distributions of the 
+        # Encoder returns the mu and std as heads to represent probability distributions of the 
         # latent space from the hidden layers above (i.e. a distilled representation
         # of the tactic trajectory)
+        self.encoder = nn.GRU(
+            input_size=8,
+            hidden_size=hidden_dim,
+            batch_first=True,
+        )
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_std = nn.Linear(hidden_dim, latent_dim)
         
-        # mirrors the encoder (backwards)
-        self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),      # 8 → 128
-            nn.LeakyReLU(0.01),
-            nn.Linear(hidden_dim, hidden_dim),      # 128 → 128
-            nn.LeakyReLU(0.01),
-            nn.Linear(hidden_dim, input_dim),       # 128 → 400
-            nn.Sigmoid(),                           # bound to [0, 1] (probability distributions)
+        # Decoder requires initial hidden state which is uses to predict next states recursively
+        # The output of the hidden layer is projected to the original 8 size feature dim
+        self.get_h0 = nn.Linear(latent_dim, hidden_dim)
+        self.decoder = nn.GRU(
+            input_size=8,
+            hidden_size=hidden_dim,
+            batch_first=True,
         )
+        self.output_head = nn.Linear(hidden_dim, 8)
     
     def reparameterize(self, mu, log_var):
         std = torch.exp(0.5 * log_var)
@@ -61,56 +59,110 @@ class TacticVAE(nn.Module):
         return mu + eps * std
 
     def forward(self, x):
-        encoded = self.encoder(x)
+        # Returns list of full encoder output (enc_out) and output at final timestamp (h_n)
+        enc_out, h_n = self.encoder(x)
         
-        # Compute mean and log variance (to guarantee positive values)
-        mu = self.fc_mu(encoded)
-        log_var = self.fc_std(encoded)
+        # The last hidden state summarizes the entire input sequence. We project it into 
+        # the mean and (logged) variance to get the latent Gaussian distribution q(z|x) 
+        # for the VAE encoder.
+        h_last = h_n[-1]
+        mu = self.fc_mu(h_last)
+        log_var = self.fc_std(h_last)
 
         # Reparameterize the latent variable so we can run GD
         z = self.reparameterize(mu, log_var)
 
-        decoded = self.decoder(z)
-        return decoded, mu, log_var
+        # Initialize decoder with the ground truth output from  previous states as the 
+        # input to the decoder so model can make predictions from real values (teacher forcing)
+        h0 = self.get_h0(z).unsqueeze(0)
+        dec_out, h_n = self.decoder(x, h0)
+        logits = self.output_head(dec_out)
+        return logits, mu, log_var
     
-    # Loss function uses Evidence Lower Bound (ELBO) 
-    # - CE - tries to get the input to the encoder and output of the decoder to match
-    # - KL divergence - tries to get the distribution of the latent representation to match the gaussian distribution
-    def loss_function(self, recon_x, x, mu, log_var):
-        BCE = F.binary_cross_entropy(recon_x, x, reduction="sum")
-        KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+    # Loss function uses timestep based cross entropy loss to evaluate if the model
+    # made correct predictions about the probability of future outcomes
+    def loss_function(self, logits, x, mu, log_var, beta=1.0):
+        # Return the expected action from the one hot vector
+        target_idx = x.argmax(dim=-1)
 
-        return BCE + KLD
+        # collapse into 2 dimensions so CE can process
+        logits_flat = logits.reshape(-1, 8)
+        target_flat = target_idx.reshape(-1)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Loss is a combination of CE (answer accuracy) and KLD (quality of prediction)
+        # Beta is updated dynamically during training to prevent kld from overpowering loss
+        recon = F.cross_entropy(logits_flat, target_flat, reduction="sum")
+        kld = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+        loss = recon + beta * kld
+        return loss
 
-def train_vae(X_train, learning_rate=1e-3, num_epochs=10, batch_size=32):
-    X_train = X_train.view(X_train.shape[0], -1).to(device)
+def load_data(X, device, batch_size=32):
+    # Stratified sampling (80/20) with reproducible splits
+    X_tensor = torch.as_tensor(X, dtype=torch.float32, device=device)
+    dataset = TensorDataset(X_tensor)
 
-    # Set up params
-    model = TacticVAE().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    train_loader = torch.utils.data.DataLoader(
-        TensorDataset(X_train), batch_size=batch_size, shuffle=True
+    train_size = int(0.80 * len(dataset))
+    test_size = len(dataset) - train_size
+    
+    generator = torch.Generator().manual_seed(42)
+    X_train, X_test = random_split(dataset, [train_size, test_size], generator=generator)
+
+    train_loader = DataLoader(
+        X_train, batch_size=batch_size, shuffle=True,
     )
+    test_loader = DataLoader(
+        X_test, batch_size=batch_size, shuffle=False,
+    )
+    return train_loader, test_loader
+
+def evaluate_vae(model, device, test_loader):
+    # Track validation/test loss
+    model.eval()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for (x_batch, ) in test_loader:
+            x_batch = x_batch.to(device)
+            logits, mu, log_var = model(x_batch)
+            loss = model.loss_function(logits, x_batch, mu, log_var)
+            total_loss += loss.item()
+    
+        loss_norm = total_loss / len(test_loader.dataset)
+    print(f"total loss: {loss_norm}")
+    return loss_norm
+
+def train_vae(model, train_loader, device, learning_rate=1e-3, num_epochs=10, batch_size=32):
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     # Train in batches
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
-        for batch_idx, data in enumerate(train_loader):
+        for data in train_loader:
             # Move batch of data to device
             x_batch = data[0].to(device)
 
             # Zero out gradients from previous batch
             optimizer.zero_grad()
-            x_recon, mu, log_var = model(x_batch)
-            loss = model.loss_function(x_recon, x_batch, mu, log_var)
+            logits, mu, log_var = model(x_batch)
+            loss = model.loss_function(logits, x_batch, mu, log_var)
             loss.backward()
             optimizer.step()
 
             total_loss += loss.item()
         epoch_loss = total_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch + 1}/{num_epochs}")
+        print(f"Epoch {epoch + 1}/{num_epochs}: {epoch_loss}")
     
     return model
+
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    try:
+        model = TacticVAE().to(device)
+        X = np.load("data/processed/trajectories_training.npy")
+        train_loader, test_loader = load_data(X, device)
+        train_vae(model, train_loader, device)
+        validation_loss = evaluate_vae(model, device, test_loader)
+    except Exception as e:
+        print(f"error during training process {e}")
