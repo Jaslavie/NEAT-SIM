@@ -1,5 +1,7 @@
 # Project specific
 /agents
+.claude
+/research
 
 # Python
 __pycache__/
@@ -70,3 +72,4 @@ coverage.xml
 
 # ipynb outputs
 *.ipynb_checkpoints/
+data/

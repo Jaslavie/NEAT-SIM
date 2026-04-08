@@ -137,11 +137,16 @@ class WargameEnv:
         if max_indx == 3:
             pass
 
-    def get_red_actions(self):
+    def get_red_actions(self, blue_pos, red_pos):
         """
         selected from red state machine
         """
-        pass
+        obs = {'blue_pos': blue_pos, 'red_pos': red_pos,
+            'red_units': self.red_units, 'blue_units': self.blue_units,
+            'red_firepower': self.red_firepower}
+        action = self.red_fsm.update(obs)
+        if action is None: return 0
+        return self.calculate_damage(action['effective_units'], self.red_firepower)
         
     
     # def interpret_actions(action):
@@ -229,6 +234,10 @@ class RedStateMachine(StateMachine):
 
         # switch to new state
         self.current_state = self.states[new_state]
+    
+    def select_action(self, obs):
+        # TODO
+        return self.current_state.select_action(obs)
 
     
 class LineFormState:
