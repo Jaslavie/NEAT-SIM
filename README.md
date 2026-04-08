@@ -23,5 +23,3 @@ Fitness function is measured on:
 3. lanchester bonus: we reward forces with initial fighting strength significantly greater than its opponents.
 
 ## Evaluation
-- **Approximate Nash Equilibria**
-- 
