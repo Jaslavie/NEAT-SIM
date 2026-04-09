@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
 import torch.optim as optim
+from pathlib import Path
 
 
 @dataclass
@@ -131,13 +132,16 @@ def evaluate_vae(model, device, test_loader):
     print(f"total loss: {loss_norm}")
     return loss_norm
 
-def train_vae(model, train_loader, device, learning_rate=1e-3, num_epochs=10, batch_size=32):
+def train_vae(model, train_loader, test_loader, device, learning_rate=1e-3, num_epochs=10, batch_size=32):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    checkpoint_path = Path("artifacts/checkpoints/vae_best.pt")
+    best_test_loss = float("inf")
 
     # Train in batches
-    model.train()
     for epoch in range(num_epochs):
-        total_loss = 0.0
+        model.train()
+        total_train_loss = 0.0
+
         for data in train_loader:
             # Move batch of data to device
             x_batch = data[0].to(device)
@@ -149,9 +153,35 @@ def train_vae(model, train_loader, device, learning_rate=1e-3, num_epochs=10, ba
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
-        epoch_loss = total_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch + 1}/{num_epochs}: {epoch_loss}")
+            total_train_loss += loss.item()
+        
+        train_loss = total_train_loss / len(train_loader.dataset)
+
+        # Save best performing model
+        if test_loader is not None:
+            test_loss = evaluate_vae(model, device, test_loader)
+            print(f"Epoch {epoch + 1}/{num_epochs} | train_loss={train_loss:.6f} | val_loss={test_loss:.6f}")
+
+            if test_loss < best_test_loss:
+                best_test_loss = test_loss
+                torch.save(
+                    {
+                        "epoch": epoch + 1,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "train_loss": train_loss,
+                        "val_loss": test_loss,
+                        "model_config": {
+                            "input_dim": model.input_dim,
+                            "hidden_dim": model.hidden_dim,
+                            "latent_dim": model.latent_dim,
+                        },
+                    },
+                    checkpoint_path,
+                )
+                print(f"Saved new best checkpoint: {checkpoint_path}")
+            else:
+                print(f"Epoch {epoch + 1}/{num_epochs} | train_loss={train_loss:.6f}")
     
     return model
 
@@ -162,7 +192,6 @@ if __name__ == "__main__":
         model = TacticVAE().to(device)
         X = np.load("data/processed/trajectories_training.npy")
         train_loader, test_loader = load_data(X, device)
-        train_vae(model, train_loader, device)
-        validation_loss = evaluate_vae(model, device, test_loader)
+        train_vae(model, train_loader, test_loader, device)
     except Exception as e:
         print(f"error during training process {e}")
